@@ -1,0 +1,44 @@
+service: vleue
+
+provider:
+  name: aws
+  runtime: python3.6
+  memorySize: 128
+  profile: lambda
+
+package:
+  include:
+    - liblambda.so
+  exclude:
+    - target/**
+    - src/**
+    - Cargo.lock
+    - Cargo.toml
+    - lambda.zip
+    - load.py
+    - test_in_python.sh
+    - deploy.sh
+
+functions:
+  api_auth_get_certificate:
+    handler: liblambda.api_auth_get_certificate
+    events:
+      - http:
+         path: auth/certificate
+         method: get
+  api_auth_test_token:
+    handler: liblambda.api_auth_test_token
+    events:
+      - http:
+         path: auth/test_token
+         method: post
+  api_auth_check_authorization:
+    handler: liblambda.api_auth_check_authorization
+  api_todo_list:
+    handler: liblambda.api_todo_list
+    events:
+      - http:
+         path: todo
+         method: get
+         authorizer: api_auth_check_authorization
+

@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 #[macro_use(lambda)]
 extern crate crowbar;
 #[macro_use]

@@ -30,7 +30,6 @@ mod errors {
 use self::errors::*;
 impl ::std::convert::Into<crowbar::errors::Error> for Error {
     fn into(self) -> crowbar::errors::Error {
-        //crowbar::errors::ErrorKind::RustError.into()
         crowbar::errors::Error::with_chain(self, crowbar::errors::ErrorKind::RustError)
     }
 }
@@ -77,7 +76,10 @@ pub fn test_token(event: crowbar::Value, _context: crowbar::LambdaContext) -> cr
     match data_result {
         Ok(data) => {
             let expires_in = 600;
-            let p1: Payload = build_payload(data.user_id, data.app_id, expires_in);
+            let p1 = AuthenticationContext {
+                user_id: data.user_id,
+                app_id: data.app_id,
+            }.build_payload(expires_in);
             let header = Header::new(Algorithm::RS256);
 
             let tokens = Tokens {
@@ -138,6 +140,7 @@ pub fn check_authorization(event: crowbar::Value, context: crowbar::LambdaContex
     }
 }
 
+#[derive(Debug)]
 struct AuthenticationContext {
     user_id: String,
     app_id: String,
@@ -148,7 +151,7 @@ impl AuthenticationContext {
             return Err("missing user_id".into());
         }
         if !p.contains_key("app_id") {
-            return Err("missing user_id".into());
+            return Err("missing app_id".into());
         }
         if !p.contains_key("expires_at") {
             return Err("missing expires_at".into());
@@ -169,27 +172,28 @@ impl AuthenticationContext {
         hashmap.insert("app_id".to_owned(), self.app_id);
         hashmap
     }
+    pub fn build_payload(self, expires_in: u32) -> Payload {
+        let mut p = Payload::new();
+        p.insert("user_id".to_string(), self.user_id);
+        p.insert("app_id".to_string(), self.app_id);
+        p.insert("expires_at".to_string(), (time::get_time().sec + i64::from(expires_in)).to_string());
+        p.insert("session_id".to_string(), format!("{}", uuid::Uuid::new_v4().hyphenated()));
+        p.insert("token_id".to_string(), format!("{}", uuid::Uuid::new_v4().hyphenated()));
+        p
+    }
+
 }
 
-
-pub fn build_payload(user_id: String, app_id: String, expires_in: u32) -> Payload {
-    let mut p = Payload::new();
-    p.insert("user_id".to_string(), user_id);
-    p.insert("app_id".to_string(), app_id);
-    p.insert("expires_at".to_string(), (time::get_time().sec + i64::from(expires_in)).to_string());
-    p.insert("session_id".to_string(), format!("{}", uuid::Uuid::new_v4().hyphenated()));
-    p.insert("token_id".to_string(), format!("{}", uuid::Uuid::new_v4().hyphenated()));
-    p
-}
-
-/*
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn can_transform_a_user_to_payload() {
-        let payload = Oauth2::build_payload("u1".to_owned(), "a1".to_owned(), 5);
+        let payload = AuthenticationContext {
+            user_id: "u1".to_owned(),
+            app_id: "a1".to_owned(),
+        }.build_payload(5);
         assert_eq!("u1", payload["user_id"])
     }
 
@@ -197,8 +201,9 @@ mod tests {
     fn can_extract_a_user_from_payload() {
         let mut p = Payload::new();
         p.insert("user_id".to_string(), "1".to_owned());
+        p.insert("app_id".to_string(), "1".to_owned());
         p.insert("expires_at".to_string(), (time::get_time().sec + i64::from(5)).to_string());
-        let user = Oauth2::payload_valid(p);
+        let user = AuthenticationContext::try_from_payload(p);
 
         assert!(user.is_ok());
     }
@@ -207,11 +212,13 @@ mod tests {
     fn should_reject_if_expired() {
         let mut p = Payload::new();
         p.insert("user_id".to_string(), "1".to_owned());
+        p.insert("app_id".to_string(), "1".to_owned());
         p.insert("expires_at".to_string(), (time::get_time().sec + i64::from(-5)).to_string());
-        let user = Oauth2::payload_valid(p);
+        let user = AuthenticationContext::try_from_payload(p);
 
         assert!(user.is_err());
-        assert_eq!("token expired", user.unwrap_err())
+        let err = user.unwrap_err();
+        assert_eq!(err.description(), "token expired");
+        assert_eq!(err.to_string(), "token expired");
     }
 }
-*/

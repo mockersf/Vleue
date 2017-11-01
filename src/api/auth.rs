@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::collections::HashMap;
 
-use crowbar;
+use crowbar::{PyException, Value, LambdaContext, LambdaResult, Policy, ApiGatewayResponse};
 use serde_json;
 use serde_urlencoded;
 
@@ -28,9 +28,9 @@ mod errors {
     }
 }
 use self::errors::*;
-impl ::std::convert::Into<crowbar::errors::Error> for Error {
-    fn into(self) -> crowbar::errors::Error {
-        crowbar::errors::Error::with_chain(self, crowbar::errors::ErrorKind::RustError)
+impl ::std::convert::Into<::crowbar::Error> for Error {
+    fn into(self) -> ::crowbar::Error {
+        ::crowbar::Error::with_chain(self, ::crowbar::RustError)
     }
 }
 
@@ -65,13 +65,14 @@ struct TestTokenInput {
     app_id: String,
 }
 
-pub fn test_token(event: crowbar::Value, _context: crowbar::LambdaContext) -> crowbar::LambdaResult<crowbar::result_helper::ApiGatewayResponse> {
+pub fn test_token(event: Value, _context: LambdaContext) -> LambdaResult<ApiGatewayResponse> {
     println!("{:?}", event);
 
     let body = event["body"].as_str();
     let data_result = body
         .ok_or::<Error>("missing body".into()).chain_err(|| "missing body")
-        .and_then(|valid_body| serde_urlencoded::from_bytes::<TestTokenInput>(&valid_body.as_bytes()).chain_err(|| "could not parse body as TestTokenInput"));
+        .and_then(|valid_body| serde_urlencoded::from_bytes::<TestTokenInput>(&valid_body.as_bytes())
+            .chain_err(|| "could not parse body as TestTokenInput"));
 
     match data_result {
         Ok(data) => {
@@ -87,7 +88,11 @@ pub fn test_token(event: crowbar::Value, _context: crowbar::LambdaContext) -> cr
                 refresh_token: None,
                 expires_in: expires_in,
             };
-            crowbar::result_helper::api_gateway_response(http::StatusCode::OK, Some((serde_json::to_string(&tokens).unwrap(), mime::APPLICATION_JSON)), None)
+            Ok(ApiGatewayResponse {
+                status_code: http::StatusCode::OK,
+                body: Some((serde_json::to_string(&tokens).unwrap(), mime::APPLICATION_JSON)),
+                ..Default::default()
+            })
         },
         Err(e) => {
             println!("failed to parse form body ({:?}): {}", body, e);
@@ -95,20 +100,28 @@ pub fn test_token(event: crowbar::Value, _context: crowbar::LambdaContext) -> cr
                 error: Oauth2ErrorMessage::InvalidRequest,
                 error_description: None,
             };
-            crowbar::result_helper::api_gateway_response(http::StatusCode::BAD_REQUEST, Some((serde_json::to_string(&oauth_error).unwrap(), mime::APPLICATION_JSON)), None)
+            Ok(ApiGatewayResponse {
+                status_code: http::StatusCode::BAD_REQUEST,
+                body: Some((serde_json::to_string(&oauth_error).unwrap(), mime::APPLICATION_JSON)),
+                ..Default::default()
+            })
         }
     }
 
 }
 
-pub fn get_pub_certificate(_event: crowbar::Value, _context: crowbar::LambdaContext) -> crowbar::LambdaResult<crowbar::result_helper::ApiGatewayResponse> {
+pub fn get_pub_certificate(_event: Value, _context: LambdaContext) -> LambdaResult<ApiGatewayResponse> {
     let mut f = File::open(JWT_PUB_KEY).expect("file not found");
 
     let mut contents = String::new();
     f.read_to_string(&mut contents)
         .expect("something went wrong reading the file");
 
-    crowbar::result_helper::api_gateway_response(http::StatusCode::OK, Some((contents, mime::TEXT_PLAIN)), None)
+    Ok(ApiGatewayResponse {
+        status_code: http::StatusCode::OK,
+        body: Some((contents, mime::TEXT_PLAIN)),
+        ..Default::default()
+    })
 }
 
 fn wrapped_decode_jwt(token: String) -> Result<(Header, Payload)> {
@@ -121,7 +134,7 @@ fn wrapped_decode_jwt(token: String) -> Result<(Header, Payload)> {
     }
 }
 
-pub fn check_authorization(event: crowbar::Value, context: crowbar::LambdaContext) -> crowbar::LambdaResult<crowbar::result_helper::Policy> {
+pub fn check_authorization(event: Value, _context: LambdaContext) -> LambdaResult<Policy> {
     let auth_header = event["authorizationToken"].as_str();
     let authentication_context = auth_header
         .ok_or::<Error>("missing header".into()).chain_err(|| "missing header")
@@ -132,10 +145,10 @@ pub fn check_authorization(event: crowbar::Value, context: crowbar::LambdaContex
         .and_then(|token| wrapped_decode_jwt(token))
         .and_then(|(_, payload)| AuthenticationContext::try_from_payload(payload));
     match authentication_context {
-        Ok(ac) => crowbar::result_helper::simple_policy_allow_all("user", ac.to_hashmap()),
+        Ok(ac) => Ok(Policy::allow_all(String::from("user"), ac.to_hashmap())),
         Err(error) => {
             println!("error during authorization: {:?}", error);
-            context.throw_exception::<crowbar::result_helper::Policy>("Unauthorized")
+            Err(PyException("Unauthorized".to_owned()).into())
         }
     }
 }

@@ -7,7 +7,7 @@ typed_id!(AppId);
 pub struct User {
     pub user_id: UserId,
     pub email: String,
-    pub ts: Option<chrono::offset::FixedOffset>,
+    pub tz: Option<chrono::offset::FixedOffset>,
 
 }
 

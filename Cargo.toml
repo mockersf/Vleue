@@ -19,6 +19,7 @@ frank_jwt = "2.5.1"
 time = "*"
 http = "*"
 mime = "*"
+chrono = { version = "0.4", features = ["serde"] }
 
 [lib]
 name = "lambda"

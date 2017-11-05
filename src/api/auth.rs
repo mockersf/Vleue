@@ -70,8 +70,8 @@ pub fn test_token(event: Value, _context: LambdaContext) -> LambdaResult<ApiGate
 
     let body = event["body"].as_str();
     let data_result = body
-        .ok_or::<Error>("missing body".into()).chain_err(|| "missing body")
-        .and_then(|valid_body| serde_urlencoded::from_bytes::<TestTokenInput>(&valid_body.as_bytes())
+        .ok_or_else::<Error, _>(|| "missing body".into()).chain_err(|| "missing body")
+        .and_then(|valid_body| serde_urlencoded::from_bytes::<TestTokenInput>(valid_body.as_bytes())
             .chain_err(|| "could not parse body as TestTokenInput"));
 
     match data_result {
@@ -137,12 +137,13 @@ fn wrapped_decode_jwt(token: String) -> Result<(Header, Payload)> {
 pub fn check_authorization(event: Value, _context: LambdaContext) -> LambdaResult<Policy> {
     let auth_header = event["authorizationToken"].as_str();
     let authentication_context = auth_header
-        .ok_or::<Error>("missing header".into()).chain_err(|| "missing header")
-        .and_then(|header| match header.starts_with("bearer ") {
-            true => Ok(header[7..].to_owned()),
-            false => Err(Error::from("authorization is not a bearer token"))
+        .ok_or_else::<Error, _>(|| "missing header".into()).chain_err(|| "missing header")
+        .and_then(|header| if header.starts_with("bearer ") {
+            Ok(header[7..].to_owned())
+        } else {
+            Err(Error::from("authorization is not a bearer token"))
         })
-        .and_then(|token| wrapped_decode_jwt(token))
+        .and_then(wrapped_decode_jwt)
         .and_then(|(_, payload)| AuthenticationContext::try_from_payload(payload));
     match authentication_context {
         Ok(ac) => Ok(Policy::allow_all(String::from("user"), ac.to_hashmap())),
@@ -175,14 +176,14 @@ impl AuthenticationContext {
         }
 
         Ok(AuthenticationContext {
-            user_id: p["user_id"].to_owned(),
-            app_id: p["app_id"].to_owned(),
+            user_id: p["user_id"].to_string(),
+            app_id: p["app_id"].to_string(),
         })
     }
-    pub fn to_hashmap(self) -> HashMap<String, String> {
+    pub fn to_hashmap(&self) -> HashMap<String, String> {
         let mut hashmap = HashMap::new();
-        hashmap.insert("user_id".to_owned(), self.user_id);
-        hashmap.insert("app_id".to_owned(), self.app_id);
+        hashmap.insert("user_id".to_string(), self.user_id.to_owned());
+        hashmap.insert("app_id".to_string(), self.app_id.to_owned());
         hashmap
     }
     pub fn build_payload(self, expires_in: u32) -> Payload {

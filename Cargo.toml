@@ -20,6 +20,8 @@ time = "*"
 http = "*"
 mime = "*"
 chrono = { version = "0.4", features = ["serde"] }
+rusoto_core = "*"
+rusoto_dynamodb = "*"
 
 [lib]
 name = "lambda"

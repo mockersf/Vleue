@@ -8,6 +8,11 @@ macro_rules! typed_id {
                 return string.to_string();
             }
         }
+        impl From<String> for $name {
+            fn from(v: String) -> Self {
+                $name(v)
+            }
+        }
     );
 }
 

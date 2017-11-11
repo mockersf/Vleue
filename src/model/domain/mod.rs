@@ -1,39 +1,29 @@
-use std::collections::HashMap;
-use chrono;
+//use chrono;
 
-/*typed_id!(ItemId);
+pub mod basic_item;
+
+typed_id!(ItemId);
+/*
 typed_id!(CategoryId);
 typed_id!(ProjectId);
 typed_id!(ContextId);
-typed_id!(CostCategoryId);*/
+typed_id!(CostCategoryId);
+*/
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Item {
-//    pub id: ItemId,
-    pub title: String,
-    pub description: String,
-    pub status: String,
-    pub flagged: bool,
-    pub fields: HashMap<String, String>,
-    pub costs: Vec<Cost>,
-    pub tags: Vec<Tag>,
-    pub projects: Project,
-    pub contexts: Option<Context>,
-    pub due: Option<chrono::DateTime<chrono::Utc>>,
-    pub defer: Option<chrono::DateTime<chrono::Utc>>,
-    pub repeat: Option<Repeat>,
-    pub parent: Option<Box<Item>>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub enum ItemType {
-    Task,
-    Item,
-    Bug,
-    Todo,
-    Birthday,
-    Category,
-    Free { name: String}
+pub trait Item {
+    fn id(&self) -> &ItemId;
+    fn title(&self) -> &str;
+    fn description(&self) -> &str;
+    fn status(&self) -> &State;
+    fn flagged(&self) -> bool;
+//    fn costs(&self) -> &Vec<Cost>;
+    fn tags(&self) -> &Vec<Tag>;
+    fn project(&self) -> &Project;
+//    fn contexts(&self) -> &Vec<Context>;
+    fn parent(&self) -> Option<Box<Item>>;
+/*    fn due(&self) -> Option<chrono::DateTime<chrono::Utc>>;
+    fn defer(&self) -> Option<chrono::DateTime<chrono::Utc>>;
+    fn repeat(&self) -> Option<Repeat>;*/
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -63,18 +53,19 @@ pub struct CostInfo {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Transition {
     pub name: String,
-    pub next: State,    
+    pub from: State,
+    pub to: State,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct State {
     pub name: String,
-    pub transitions: Vec<Transition>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Workflow {
     pub states: Vec<State>,
+    pub transitions: Vec<Transition>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

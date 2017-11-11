@@ -21,6 +21,9 @@ extern crate http;
 extern crate mime;
 extern crate chrono;
 
+extern crate rusoto_core;
+extern crate rusoto_dynamodb;
+
 mod model;
 mod api;
 
@@ -32,5 +35,6 @@ lambda!(
     "api_auth_get_certificate" => api::auth::get_pub_certificate,
     "api_auth_test_token" => api::auth::test_token,
     "api_auth_check_authorization" => api::auth::check_authorization,
-    "api_todo_list" => api::todo::list
+    "api_todo_list" => api::todo::list,
+    "api_todo_add" => api::todo::add
 );

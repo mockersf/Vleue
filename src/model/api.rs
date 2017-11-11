@@ -1,4 +1,6 @@
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ItemList {
-    pub items: Vec<super::Item>,
+pub struct ItemList<T = super::basic_item::BasicItem>
+    where T: super::Item
+ {
+    pub items: Vec<T>,
 }

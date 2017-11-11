@@ -103,7 +103,7 @@ pub fn test_token(event: Value, _context: LambdaContext) -> LambdaResult<ApiGate
 
     match data_result {
         Ok(data) => {
-            let expires_in = 600;
+            let expires_in = 86400;
             let p1 = AuthenticationContext {
                 user: model::app::User {
                     user_id: model::app::UserId(data.user_id),
@@ -166,7 +166,7 @@ pub fn check_authorization(event: Value, _context: LambdaContext) -> LambdaResul
     let auth_header = event["authorizationToken"].as_str();
     let authentication_context = auth_header
         .chain_err(|| ErrorKind::MissingHeader("authorization"))
-        .and_then(|header| if header.starts_with("bearer ") {
+        .and_then(|header| if header.to_lowercase().starts_with("bearer ") {
             Ok(header[7..].to_owned())
         } else {
             Err(ErrorKind::InvalidHeader("authorization").into())

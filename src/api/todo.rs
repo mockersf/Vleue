@@ -95,7 +95,7 @@ pub fn list(event: crowbar::Value, _context: crowbar::LambdaContext) -> crowbar:
 
     Ok(crowbar::ApiGatewayResponse {
         status_code: http::StatusCode::OK,
-        body: Some(Ok((todos, mime::APPLICATION_JSON))),
+        body: Some((Ok(todos), mime::APPLICATION_JSON)),
         ..Default::default()
     })
 }
@@ -171,13 +171,13 @@ pub fn add(event: crowbar::Value, _context: crowbar::LambdaContext) -> crowbar::
             client.put_item(&put_item).unwrap();
             Ok(crowbar::ApiGatewayResponse {
                 status_code: http::StatusCode::OK,
-                body: Some(Ok((item, mime::APPLICATION_JSON))),
+                body: Some((Ok(item), mime::APPLICATION_JSON)),
                 ..Default::default()
             })
         },
     Err(error) => Ok(crowbar::ApiGatewayResponse {
             status_code: http::StatusCode::BAD_REQUEST,
-            body: Some(Err((error, mime::APPLICATION_JSON))),
+            body: Some((Err(error), mime::APPLICATION_JSON)),
             ..Default::default()
         })
 

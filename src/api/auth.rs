@@ -121,7 +121,7 @@ pub fn test_token(event: Value, _context: LambdaContext) -> LambdaResult<ApiGate
             };
             Ok(ApiGatewayResponse {
                 status_code: http::StatusCode::OK,
-                body: Some((serde_json::to_string(&tokens).unwrap(), mime::APPLICATION_JSON)),
+                body: Some(Ok((serde_json::to_string(&tokens).unwrap(), mime::APPLICATION_JSON))),
                 ..Default::default()
             })
         },
@@ -133,7 +133,7 @@ pub fn test_token(event: Value, _context: LambdaContext) -> LambdaResult<ApiGate
             };
             Ok(ApiGatewayResponse {
                 status_code: http::StatusCode::BAD_REQUEST,
-                body: Some((serde_json::to_string(&oauth_error).unwrap(), mime::APPLICATION_JSON)),
+                body: Some(Err((serde_json::to_string(&oauth_error).unwrap(), mime::APPLICATION_JSON))),
                 ..Default::default()
             })
         }
@@ -150,7 +150,7 @@ pub fn get_pub_certificate(_event: Value, _context: LambdaContext) -> LambdaResu
 
     Ok(ApiGatewayResponse {
         status_code: http::StatusCode::OK,
-        body: Some((contents, mime::TEXT_PLAIN)),
+        body: Some(Ok((contents, mime::TEXT_PLAIN))),
         ..Default::default()
     })
 }

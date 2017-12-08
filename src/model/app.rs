@@ -8,7 +8,6 @@ pub struct User {
     pub user_id: UserId,
     pub email: String,
     pub tz: Option<chrono::offset::FixedOffset>,
-
 }
 
 #[derive(Serialize, Deserialize, Debug)]

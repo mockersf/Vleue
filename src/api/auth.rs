@@ -96,22 +96,24 @@ struct TestTokenInput {
 
 pub fn test_token(event: Value, _context: LambdaContext) -> LambdaResult<ApiGatewayResponse> {
     let body = event["body"].as_str();
-    let data_result = body
-        .chain_err(|| ErrorKind::MissingBody)
-        .and_then(|valid_body| serde_urlencoded::from_bytes::<TestTokenInput>(valid_body.as_bytes())
-            .chain_err(|| ErrorKind::ParsingError("body")));
+    let data_result = body.chain_err(|| ErrorKind::MissingBody)
+        .and_then(|valid_body| {
+                      serde_urlencoded::from_bytes::<TestTokenInput>(valid_body.as_bytes())
+                          .chain_err(|| ErrorKind::ParsingError("body"))
+                  });
 
     match data_result {
         Ok(data) => {
             let expires_in = 86400;
             let p1 = AuthenticationContext {
-                user: model::app::User {
-                    user_id: model::app::UserId(data.user_id),
-                    email: "testemail".to_string(),
-                    tz: None,
-                },
-                app_id: data.app_id,
-            }.to_payload(expires_in);
+                    user: model::app::User {
+                        user_id: model::app::UserId(data.user_id),
+                        email: "testemail".to_string(),
+                        tz: None,
+                    },
+                    app_id: data.app_id,
+                }
+                .to_payload(expires_in);
             let header = Header::new(Algorithm::RS256);
 
             let tokens = Tokens {
@@ -120,11 +122,12 @@ pub fn test_token(event: Value, _context: LambdaContext) -> LambdaResult<ApiGate
                 expires_in: expires_in,
             };
             Ok(ApiGatewayResponse {
-                status_code: http::StatusCode::OK,
-                body: Some((Ok(serde_json::to_string(&tokens).unwrap()), mime::APPLICATION_JSON)),
-                ..Default::default()
-            })
-        },
+                   status_code: http::StatusCode::OK,
+                   body: Some((Ok(serde_json::to_string(&tokens).unwrap()),
+                               mime::APPLICATION_JSON)),
+                   ..Default::default()
+               })
+        }
         Err(e) => {
             println!("failed to parse form body ({:?}): {}", body, e);
             let oauth_error = Oauth2Error {
@@ -132,16 +135,19 @@ pub fn test_token(event: Value, _context: LambdaContext) -> LambdaResult<ApiGate
                 error_description: None,
             };
             Ok(ApiGatewayResponse {
-                status_code: http::StatusCode::BAD_REQUEST,
-                body: Some((Err(serde_json::to_string(&oauth_error).unwrap()), mime::APPLICATION_JSON)),
-                ..Default::default()
-            })
+                   status_code: http::StatusCode::BAD_REQUEST,
+                   body: Some((Err(serde_json::to_string(&oauth_error).unwrap()),
+                               mime::APPLICATION_JSON)),
+                   ..Default::default()
+               })
         }
     }
 
 }
 
-pub fn get_pub_certificate(_event: Value, _context: LambdaContext) -> LambdaResult<ApiGatewayResponse> {
+pub fn get_pub_certificate(_event: Value,
+                           _context: LambdaContext)
+                           -> LambdaResult<ApiGatewayResponse> {
     let mut f = File::open(JWT_PUB_KEY).expect("file not found");
 
     let mut contents = String::new();
@@ -149,30 +155,33 @@ pub fn get_pub_certificate(_event: Value, _context: LambdaContext) -> LambdaResu
         .expect("something went wrong reading the file");
 
     Ok(ApiGatewayResponse {
-        status_code: http::StatusCode::OK,
-        body: Some((Ok(contents), mime::TEXT_PLAIN)),
-        ..Default::default()
-    })
+           status_code: http::StatusCode::OK,
+           body: Some((Ok(contents), mime::TEXT_PLAIN)),
+           ..Default::default()
+       })
 }
 
 fn wrapped_decode_jwt(token: String) -> Result<(Header, Payload)> {
     match ::std::panic::catch_unwind(|| decode(token, JWT_PUB_KEY.to_owned(), Algorithm::RS256)) {
-        Ok(result) => result.map_err(|err| Error::from(format!("error decoding the JWT {:?}", err))),
-        Err(error) => Err(Error::from(format!("error in JWT lib: {:?}", error)))
+        Ok(result) => {
+            result.map_err(|err| Error::from(format!("error decoding the JWT {:?}", err)))
+        }
+        Err(error) => Err(Error::from(format!("error in JWT lib: {:?}", error))),
     }
 }
 
 pub fn check_authorization(event: Value, _context: LambdaContext) -> LambdaResult<Policy> {
     let auth_header = event["authorizationToken"].as_str();
-    let authentication_context = auth_header
-        .chain_err(|| ErrorKind::MissingHeader("authorization"))
-        .and_then(|header| if header.to_lowercase().starts_with("bearer ") {
-            Ok(header[7..].to_owned())
-        } else {
-            Err(ErrorKind::InvalidHeader("authorization").into())
-        })
-        .and_then(wrapped_decode_jwt)
-        .and_then(|(_, payload)| AuthenticationContext::try_from(payload));
+    let authentication_context =
+        auth_header
+            .chain_err(|| ErrorKind::MissingHeader("authorization"))
+            .and_then(|header| if header.to_lowercase().starts_with("bearer ") {
+                          Ok(header[7..].to_owned())
+                      } else {
+                          Err(ErrorKind::InvalidHeader("authorization").into())
+                      })
+            .and_then(wrapped_decode_jwt)
+            .and_then(|(_, payload)| AuthenticationContext::try_from(payload));
     match authentication_context {
         Ok(ac) => Ok(Policy::allow_all(String::from("user"), ac.to_hashmap())),
         Err(error) => {
@@ -189,30 +198,37 @@ struct AuthenticationContext {
 }
 impl AuthenticationContext {
     pub fn try_from(p: Payload) -> Result<AuthenticationContext> {
-        let user_id = p.get("user_id").chain_err(|| ErrorKind::MissingField("user_id"))?;
+        let user_id = p.get("user_id")
+            .chain_err(|| ErrorKind::MissingField("user_id"))?;
         let user = AuthenticationContext::get_user_from(user_id)?;
 
-        let app_id = p.get("app_id").chain_err(|| ErrorKind::MissingField("app_id"))?;
+        let app_id = p.get("app_id")
+            .chain_err(|| ErrorKind::MissingField("app_id"))?;
 
-        let expires_at = p.get("expires_at").chain_err(|| ErrorKind::MissingField("expires_at"))
-            .and_then(|expires_at| expires_at.parse::<i64>().chain_err(|| ErrorKind::ParsingError("expires_at")))?;
+        let expires_at = p.get("expires_at")
+            .chain_err(|| ErrorKind::MissingField("expires_at"))
+            .and_then(|expires_at| {
+                          expires_at
+                              .parse::<i64>()
+                              .chain_err(|| ErrorKind::ParsingError("expires_at"))
+                      })?;
         if expires_at < time::get_time().sec {
-          return Err(ErrorKind::ExpiredToken.into());
+            return Err(ErrorKind::ExpiredToken.into());
         }
 
         Ok(AuthenticationContext {
-            user: user,
-            app_id: app_id.to_string(),
-        })
+               user: user,
+               app_id: app_id.to_string(),
+           })
     }
 
     fn get_user_from(user_id: &str) -> Result<model::app::User> {
         //TODO: check that user exists and return it from
         Ok(model::app::User {
-            user_id: model::app::UserId(user_id.to_string()),
-            email: "testemail".to_string(),
-            tz: None,
-        })
+               user_id: model::app::UserId(user_id.to_string()),
+               email: "testemail".to_string(),
+               tz: None,
+           })
     }
     pub fn to_hashmap(&self) -> HashMap<String, String> {
         let mut hashmap = HashMap::new();
@@ -225,12 +241,14 @@ impl AuthenticationContext {
         let mut p = Payload::new();
         p.insert("user_id".to_string(), self.user.user_id.to_string());
         p.insert("app_id".to_string(), self.app_id);
-        p.insert("expires_at".to_string(), (time::get_time().sec + i64::from(expires_in)).to_string());
-        p.insert("session_id".to_string(), format!("{}", uuid::Uuid::new_v4().hyphenated()));
-        p.insert("token_id".to_string(), format!("{}", uuid::Uuid::new_v4().hyphenated()));
+        p.insert("expires_at".to_string(),
+                 (time::get_time().sec + i64::from(expires_in)).to_string());
+        p.insert("session_id".to_string(),
+                 format!("{}", uuid::Uuid::new_v4().hyphenated()));
+        p.insert("token_id".to_string(),
+                 format!("{}", uuid::Uuid::new_v4().hyphenated()));
         p
     }
-
 }
 
 #[cfg(test)]
@@ -240,13 +258,14 @@ mod tests {
     #[test]
     fn can_transform_a_user_to_payload() {
         let payload = AuthenticationContext {
-            user: model::app::User {
-                user_id: model::app::UserId("u1".to_string()),
-                email: "testemail".to_string(),
-                tz: None,
-            },
-            app_id: "a1".to_owned(),
-        }.to_payload(57);
+                user: model::app::User {
+                    user_id: model::app::UserId("u1".to_string()),
+                    email: "testemail".to_string(),
+                    tz: None,
+                },
+                app_id: "a1".to_owned(),
+            }
+            .to_payload(57);
 
         assert_eq!("u1", payload["user_id"])
     }
@@ -256,7 +275,8 @@ mod tests {
         let mut p = Payload::new();
         p.insert("user_id".to_string(), "1".to_owned());
         p.insert("app_id".to_string(), "1".to_owned());
-        p.insert("expires_at".to_string(), (time::get_time().sec + i64::from(5)).to_string());
+        p.insert("expires_at".to_string(),
+                 (time::get_time().sec + i64::from(5)).to_string());
         let auth_context = AuthenticationContext::try_from(p);
 
         assert!(auth_context.is_ok());
@@ -267,7 +287,8 @@ mod tests {
         let mut p = Payload::new();
         p.insert("user_id".to_string(), "1".to_owned());
         p.insert("app_id".to_string(), "1".to_owned());
-        p.insert("expires_at".to_string(), (time::get_time().sec + i64::from(-5)).to_string());
+        p.insert("expires_at".to_string(),
+                 (time::get_time().sec + i64::from(-5)).to_string());
         let auth_context = AuthenticationContext::try_from(p);
 
         assert!(auth_context.is_err());
@@ -280,7 +301,8 @@ mod tests {
     fn should_reject_if_missing_user_id() {
         let mut p = Payload::new();
         p.insert("app_id".to_string(), "1".to_owned());
-        p.insert("expires_at".to_string(), (time::get_time().sec + i64::from(-5)).to_string());
+        p.insert("expires_at".to_string(),
+                 (time::get_time().sec + i64::from(-5)).to_string());
         let auth_context = AuthenticationContext::try_from(p);
 
         assert!(auth_context.is_err());

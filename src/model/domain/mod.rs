@@ -16,19 +16,19 @@ pub trait Item {
     fn description(&self) -> &str;
     fn status(&self) -> &State;
     fn flagged(&self) -> bool;
-//    fn costs(&self) -> &Vec<Cost>;
+    //    fn costs(&self) -> &Vec<Cost>;
     fn tags(&self) -> &Vec<Tag>;
     fn project(&self) -> &Project;
-//    fn contexts(&self) -> &Vec<Context>;
+    //    fn contexts(&self) -> &Vec<Context>;
     fn parent(&self) -> Option<Box<Item>>;
-/*    fn due(&self) -> Option<chrono::DateTime<chrono::Utc>>;
+    /*    fn due(&self) -> Option<chrono::DateTime<chrono::Utc>>;
     fn defer(&self) -> Option<chrono::DateTime<chrono::Utc>>;
     fn repeat(&self) -> Option<Repeat>;*/
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CostCategory {
-//    pub id: CostCategoryId,
+    //    pub id: CostCategoryId,
     pub name: String,
 }
 
@@ -40,7 +40,7 @@ pub struct Cost {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Tag {
-//    pub id: CategoryId,
+    //    pub id: CategoryId,
     pub name: String,
 }
 
@@ -70,7 +70,7 @@ pub struct Workflow {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Project {
-//    pub id: ProjectId,
+    //    pub id: ProjectId,
     pub name: String,
     pub costs_info: CostInfo,
     pub workflow: Workflow,
@@ -78,11 +78,9 @@ pub struct Project {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Context {
-//    pub id: ContextId,
+    //    pub id: ContextId,
     pub name: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Repeat {
-
-}
+pub struct Repeat {}

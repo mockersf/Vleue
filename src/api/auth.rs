@@ -154,7 +154,7 @@ fn wrapped_decode_jwt(token: String) -> Result<(Header, Payload), ProcessError> 
             })
         }
         Err(error) => Err(ProcessError::JWTError(
-            format!("error decoding the JWT {:?}", error),
+            format!("panic decoding the JWT {:?}", error),
         )),
     }
 }

@@ -7,8 +7,8 @@ pub struct BasicItem {
     pub description: String,
     pub status: State,
     pub flagged: bool,
-    pub project: Project,
-    pub tags: Vec<Tag>,
+    pub project_id: ProjectId,
+    //pub tags: Vec<TagId>,
 }
 
 impl Item for BasicItem {
@@ -27,13 +27,13 @@ impl Item for BasicItem {
     fn flagged(&self) -> bool {
         self.flagged
     }
-    fn tags(&self) -> &Vec<Tag> {
+    /*fn tags(&self) -> &Vec<TagId> {
         &self.tags
+    }*/
+    fn project(&self) -> &ProjectId {
+        &self.project_id
     }
-    fn project(&self) -> &Project {
-        &self.project
-    }
-    fn parent(&self) -> Option<Box<Item>> {
+    fn parent(&self) -> Option<Box<ItemId>> {
         None
     }
 }

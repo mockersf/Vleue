@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["François Mockers <mockersf@gmail.com>"]
 
 [dependencies]
-crowbar = { git = "https://github.com/mockersf/rust-crowbar", branch = "full", features = ["errorfailure", "resulthelper"]}
+crowbar = { git = "https://github.com/mockersf/rust-crowbar", branch = "full", features = ["errorfailure", "resulthelper"] }
 #crowbar = { path = "../rust-crowbar", features = ["errorfailure", "resulthelper"] }
 cpython = { version = "*", default-features = false, features = ["python3-sys"] }
 

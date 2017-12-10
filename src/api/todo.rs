@@ -40,10 +40,18 @@ struct MissingBody();
 #[fail(display = "Missing Field: '{}'", _0)]
 struct MissingField(&'static str);
 #[derive(Debug, Fail)]
-#[fail(display = "Parsing Error")]
+#[fail(display = "Parsing Error: {}", serde_error)]
 struct ParsingError {
     #[cause]
     serde_error: ::serde_json::Error,
+}
+#[derive(Debug, Fail)]
+#[fail(display = "Invalid UUID for {}: '{}'", field, uuid)]
+struct InvalidUUIDError {
+    uuid: String,
+    field: &'static str,
+    #[cause]
+    uuid_error: uuid::ParseError,
 }
 
 
@@ -82,23 +90,13 @@ pub fn list(
             let description = item.get("description").and_then(|item| item.s.clone());
             let title = item.get("title").and_then(|item| item.s.clone());
             let id = item.get("id").and_then(|item| item.s.clone());
+            let project_id = item.get("project_id").and_then(|item| item.s.clone());
             model::basic_item::BasicItem {
                 description: description.unwrap_or_else(|| "".to_string()),
                 flagged: false,
                 id: id.unwrap().into(),
-                project: model::Project {
-                    name: "inbox".to_string(),
-                    workflow: model::Workflow {
-                        states: vec![],
-                        transitions: vec![],
-                    },
-                    costs_info: model::CostInfo {
-                        categories: vec![],
-                        unit: "hour".to_string(),
-                    },
-                },
+                project_id: project_id.unwrap().into(),
                 status: model::State { name: "".to_string() },
-                tags: vec![],
                 title: title.unwrap(),
             }
         })
@@ -117,30 +115,32 @@ pub fn list(
 struct ItemInput {
     title: Option<String>,
     description: Option<String>,
+    project_id: Option<String>,
 }
 impl ItemInput {
     fn new_item(self) -> Result<model::basic_item::BasicItem, SerializableError> {
         let id = model::ItemId(format!("{}", uuid::Uuid::new_v4().hyphenated()));
-        let title = self.title.ok_or_else(|| MissingField("title").into());
-        let description = self.description.unwrap_or_else(|| "".to_string());
+        let title = self.title.clone().ok_or_else(
+            || MissingField("title").into(),
+        );
+        let description = self.description.clone().unwrap_or_else(|| "".to_string());
+        let input_project_id = uuid::Uuid::parse_str(
+            &self.project_id.clone().unwrap_or_else(|| "".to_string()),
+        ).map_err(|err| {
+            InvalidUUIDError {
+                uuid: self.project_id.clone().unwrap_or_else(|| "".to_string()),
+                field: "project_id",
+                uuid_error: err,
+            }
+        })?;
+        let project_id = model::ProjectId(format!("{}", input_project_id));
         title.map(|title| {
             model::basic_item::BasicItem {
                 description: description,
                 flagged: false,
                 id: id,
-                project: model::Project {
-                    name: "inbox".to_string(),
-                    workflow: model::Workflow {
-                        states: vec![],
-                        transitions: vec![],
-                    },
-                    costs_info: model::CostInfo {
-                        categories: vec![],
-                        unit: "hour".to_string(),
-                    },
-                },
+                project_id: project_id,
                 status: model::State { name: "".to_string() },
-                tags: vec![],
                 title: title,
             }
         })
@@ -190,6 +190,13 @@ pub fn add(
                 "title".to_string(),
                 AttributeValue {
                     s: Some(item.title.to_owned()),
+                    ..Default::default()
+                },
+            );
+            key.insert(
+                "project_id".to_string(),
+                AttributeValue {
+                    s: Some(item.project_id.to_string()),
                     ..Default::default()
                 },
             );

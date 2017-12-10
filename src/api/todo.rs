@@ -19,7 +19,8 @@ use model;
 pub struct SerializableError(pub Error);
 impl Serialize for SerializableError {
     fn serialize<S>(&self, serializer: S) -> ::std::result::Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         let mut state = serializer.serialize_struct("Error", 1)?;
         state.serialize_field("error", &format!("{}", self.0))?;
@@ -46,21 +47,26 @@ struct ParsingError {
 }
 
 
-pub fn list(event: &crowbar::Value,
-            _context: &crowbar::LambdaContext)
-            -> crowbar::LambdaResult<crowbar::ApiGatewayResponse<model::api::ItemList>> {
+pub fn list(
+    event: &crowbar::Value,
+    _context: &crowbar::LambdaContext,
+) -> crowbar::LambdaResult<crowbar::ApiGatewayResponse<model::api::ItemList>> {
     let table = env::var("table").unwrap();
     let provider = DefaultCredentialsProvider::new().unwrap();
     let client = DynamoDbClient::new(default_tls_client().unwrap(), provider, Region::UsEast1);
     let mut attributes = HashMap::new();
-    attributes.insert(":uid".to_string(),
-                      AttributeValue {
-                          s: Some(event["requestContext"]["authorizer"]["user_id"]
-                                      .as_str()
-                                      .unwrap()
-                                      .to_string()),
-                          ..Default::default()
-                      });
+    attributes.insert(
+        ":uid".to_string(),
+        AttributeValue {
+            s: Some(
+                event["requestContext"]["authorizer"]["user_id"]
+                    .as_str()
+                    .unwrap()
+                    .to_string(),
+            ),
+            ..Default::default()
+        },
+    );
     let query_input = QueryInput {
         table_name: table,
         expression_attribute_values: Some(attributes),
@@ -101,10 +107,10 @@ pub fn list(event: &crowbar::Value,
     let todos = model::api::ItemList { items: r };
 
     Ok(crowbar::ApiGatewayResponse {
-           status_code: http::StatusCode::OK,
-           body: Some((Ok(todos), mime::APPLICATION_JSON)),
-           ..Default::default()
-       })
+        status_code: http::StatusCode::OK,
+        body: Some((Ok(todos), mime::APPLICATION_JSON)),
+        ..Default::default()
+    })
 }
 
 #[derive(Deserialize)]
@@ -141,45 +147,60 @@ impl ItemInput {
     }
 }
 
-pub fn add(event: &crowbar::Value,
-           _context: &crowbar::LambdaContext)
-           -> crowbar::LambdaResult<crowbar::ApiGatewayResponse<model::basic_item::BasicItem,
-                                                                SerializableError>> {
+pub fn add(
+    event: &crowbar::Value,
+    _context: &crowbar::LambdaContext,
+) -> crowbar::LambdaResult<
+    crowbar::ApiGatewayResponse<
+        model::basic_item::BasicItem,
+        SerializableError,
+    >,
+> {
     let data_result: Result<ItemInput, SerializableError> = event["body"]
         .as_str()
         .ok_or_else(|| MissingBody().into())
         .and_then(|valid_body| {
-                      serde_json::from_slice::<ItemInput>(valid_body.as_bytes())
-                          .map_err(|err| ParsingError { serde_error: err }.into())
-                  });
+            serde_json::from_slice::<ItemInput>(valid_body.as_bytes())
+                .map_err(|err| ParsingError { serde_error: err }.into())
+        });
     match data_result.and_then(|item| item.new_item()) {
         Ok(item) => {
             let table = env::var("table").unwrap();
             let mut key = HashMap::new();
-            key.insert("uid".to_string(),
-                       AttributeValue {
-                           s: Some(event["requestContext"]["authorizer"]["user_id"]
-                                       .as_str()
-                                       .unwrap()
-                                       .to_string()),
-                           ..Default::default()
-                       });
-            key.insert("id".to_string(),
-                       AttributeValue {
-                           s: Some(item.id.to_string()),
-                           ..Default::default()
-                       });
-            key.insert("title".to_string(),
-                       AttributeValue {
-                           s: Some(item.title.to_owned()),
-                           ..Default::default()
-                       });
+            key.insert(
+                "uid".to_string(),
+                AttributeValue {
+                    s: Some(
+                        event["requestContext"]["authorizer"]["user_id"]
+                            .as_str()
+                            .unwrap()
+                            .to_string(),
+                    ),
+                    ..Default::default()
+                },
+            );
+            key.insert(
+                "id".to_string(),
+                AttributeValue {
+                    s: Some(item.id.to_string()),
+                    ..Default::default()
+                },
+            );
+            key.insert(
+                "title".to_string(),
+                AttributeValue {
+                    s: Some(item.title.to_owned()),
+                    ..Default::default()
+                },
+            );
             if item.description != "" {
-                key.insert("description".to_string(),
-                           AttributeValue {
-                               s: Some(item.description.to_owned()),
-                               ..Default::default()
-                           });
+                key.insert(
+                    "description".to_string(),
+                    AttributeValue {
+                        s: Some(item.description.to_owned()),
+                        ..Default::default()
+                    },
+                );
             }
             let put_item = PutItemInput {
                 item: key,
@@ -191,17 +212,17 @@ pub fn add(event: &crowbar::Value,
                 DynamoDbClient::new(default_tls_client().unwrap(), provider, Region::UsEast1);
             client.put_item(&put_item).unwrap();
             Ok(crowbar::ApiGatewayResponse {
-                   status_code: http::StatusCode::OK,
-                   body: Some((Ok(item), mime::APPLICATION_JSON)),
-                   ..Default::default()
-               })
+                status_code: http::StatusCode::OK,
+                body: Some((Ok(item), mime::APPLICATION_JSON)),
+                ..Default::default()
+            })
         }
         Err(error) => {
             Ok(crowbar::ApiGatewayResponse {
-                   status_code: http::StatusCode::BAD_REQUEST,
-                   body: Some((Err(error), mime::APPLICATION_JSON)),
-                   ..Default::default()
-               })
+                status_code: http::StatusCode::BAD_REQUEST,
+                body: Some((Err(error), mime::APPLICATION_JSON)),
+                ..Default::default()
+            })
         }
 
     }

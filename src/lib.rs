@@ -6,7 +6,7 @@ extern crate crowbar;
 extern crate cpython;
 
 #[macro_use]
-extern crate error_chain;
+extern crate failure;
 
 extern crate serde;
 #[macro_use]

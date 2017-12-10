@@ -7,6 +7,7 @@ use mime;
 use serde_json;
 use uuid;
 use serde::ser::{Serialize, Serializer, SerializeStruct};
+use failure::{Error, Fail};
 
 use rusoto_core::{DefaultCredentialsProvider, Region};
 use rusoto_dynamodb::{DynamoDb, DynamoDbClient, QueryInput, QueryOutput, PutItemInput,
@@ -15,39 +16,38 @@ use rusoto_core::default_tls_client;
 
 use model;
 
-mod errors {
-    error_chain!{
-        types {
-            Error, ErrorKind, ResultExt, Result;
-        }
-        foreign_links {
-            SerdeJson(::serde_json::Error);
-        }
-        errors {
-            MissingBody {
-                description("Missing Body")
-                display("Missing Body")
-            }
-            MissingField(name: &'static str) {
-                description("Missing Field")
-                display("Missing Field: '{}'", name)
-            }
-        }
-    }
-}
-use self::errors::*;
-impl Serialize for Error {
+pub struct SerializableError(pub Error);
+impl Serialize for SerializableError {
     fn serialize<S>(&self, serializer: S) -> ::std::result::Result<S::Ok, S::Error>
         where S: Serializer
     {
         let mut state = serializer.serialize_struct("Error", 1)?;
-        state.serialize_field("error", &format!("{}", self))?;
+        state.serialize_field("error", &format!("{}", self.0))?;
         state.end()
     }
 }
+impl<F: Fail> From<F> for SerializableError {
+    fn from(failure: F) -> SerializableError {
+        SerializableError(failure.into())
+    }
+}
 
-pub fn list(event: crowbar::Value,
-            _context: crowbar::LambdaContext)
+#[derive(Debug, Fail)]
+#[fail(display = "Missing Body")]
+struct MissingBody();
+#[derive(Debug, Fail)]
+#[fail(display = "Missing Field: '{}'", _0)]
+struct MissingField(&'static str);
+#[derive(Debug, Fail)]
+#[fail(display = "Parsing Error")]
+struct ParsingError {
+    #[cause]
+    serde_error: ::serde_json::Error,
+}
+
+
+pub fn list(event: &crowbar::Value,
+            _context: &crowbar::LambdaContext)
             -> crowbar::LambdaResult<crowbar::ApiGatewayResponse<model::api::ItemList>> {
     let table = env::var("table").unwrap();
     let provider = DefaultCredentialsProvider::new().unwrap();
@@ -77,7 +77,7 @@ pub fn list(event: crowbar::Value,
             let title = item.get("title").and_then(|item| item.s.clone());
             let id = item.get("id").and_then(|item| item.s.clone());
             model::basic_item::BasicItem {
-                description: description.unwrap_or("".to_string()),
+                description: description.unwrap_or_else(|| "".to_string()),
                 flagged: false,
                 id: id.unwrap().into(),
                 project: model::Project {
@@ -113,11 +113,10 @@ struct ItemInput {
     description: Option<String>,
 }
 impl ItemInput {
-    fn new_item(self) -> Result<model::basic_item::BasicItem> {
+    fn new_item(self) -> Result<model::basic_item::BasicItem, SerializableError> {
         let id = model::ItemId(format!("{}", uuid::Uuid::new_v4().hyphenated()));
-        let title = self.title
-            .ok_or_else(|| ErrorKind::MissingField("title").into());
-        let description = self.description.unwrap_or("".to_string());
+        let title = self.title.ok_or_else(|| MissingField("title").into());
+        let description = self.description.unwrap_or_else(|| "".to_string());
         title.map(|title| {
             model::basic_item::BasicItem {
                 description: description,
@@ -142,16 +141,16 @@ impl ItemInput {
     }
 }
 
-pub fn add
-    (event: crowbar::Value,
-     _context: crowbar::LambdaContext)
-     -> crowbar::LambdaResult<crowbar::ApiGatewayResponse<model::basic_item::BasicItem, Error>> {
-    let data_result = event["body"]
+pub fn add(event: &crowbar::Value,
+           _context: &crowbar::LambdaContext)
+           -> crowbar::LambdaResult<crowbar::ApiGatewayResponse<model::basic_item::BasicItem,
+                                                                SerializableError>> {
+    let data_result: Result<ItemInput, SerializableError> = event["body"]
         .as_str()
-        .chain_err(|| ErrorKind::MissingBody)
+        .ok_or_else(|| MissingBody().into())
         .and_then(|valid_body| {
                       serde_json::from_slice::<ItemInput>(valid_body.as_bytes())
-                          .map_err(|err| err.into())
+                          .map_err(|err| ParsingError { serde_error: err }.into())
                   });
     match data_result.and_then(|item| item.new_item()) {
         Ok(item) => {

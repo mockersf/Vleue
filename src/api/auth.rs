@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::prelude::*;
 use std::collections::HashMap;
+use std::ops::Add;
 
 use crowbar::{PyException, Value, LambdaContext, LambdaResult, Policy, ApiGatewayResponse};
 use serde_json;
@@ -12,62 +13,40 @@ use time;
 use http;
 use mime;
 
+use failure::Error;
+
 use model;
 
 use JWT_PUB_KEY;
 use JWT_SECRET_KEY;
 
-mod errors {
-    error_chain!{
-        types {
-            Error, ErrorKind, ResultExt, Result;
-        }
-        foreign_links {
-            Fmt(::std::fmt::Error);
-            Io(::std::io::Error);
-            Serde(::serde::de::value::Error);
-            ParseIntError(::std::num::ParseIntError);
-        }
-        errors {
-            MissingHeader(name: &'static str) {
-                description("Missing Header")
-                display("Missing Header: '{}'", name)
-            }
-            MissingBody {
-                description("Missing Body")
-                display("Missing Body")
-            }
-            MissingField(name: &'static str) {
-                description("Missing Field")
-                display("Missing Field: '{}'", name)
-            }
-            InvalidHeader(name: &'static str) {
-                description("Invalid Header")
-                display("Invalid Header: '{}'", name)
-            }
-            ExpiredToken {
-                description("Expired Token")
-                display("Expired Token")
-            }
-            ParsingError(field: &'static str) {
-                description("Parsing Error")
-                display("Could Not Parse Field: '{}'", field)
-            }
-        }
-    }
+#[derive(Debug, Fail)]
+enum InputError {
+    #[fail(display = "Missing Header: '{}'", _0)]
+    MissingHeader(String),
+    #[fail(display = "Missing Body")]
+    MissingBody,
+    #[fail(display = "Missing Field: '{}'", _0)]
+    MissingField(String),
+    #[fail(display = "Invalid Header: '{}'", _0)]
+    InvalidHeader { name: String },
+    #[fail(display = "Could Not Parse Field: '{}'", _0)]
+    ParsingError(String),
+    #[fail(display = "Expired Token")]
+    ExpiredToken,
 }
-use self::errors::*;
-impl ::std::convert::Into<::crowbar::Error> for Error {
-    fn into(self) -> ::crowbar::Error {
-        ::crowbar::Error::with_chain(self, ::crowbar::RustError)
-    }
+
+#[derive(Debug, Fail)]
+enum ProcessError {
+    #[fail(display = "JWT Error: '{}'", _0)]
+    JWTError(String),
 }
 
 #[derive(Serialize, Debug, Clone, Default)]
 struct Tokens {
     access_token: String,
     refresh_token: Option<String>,
-    expires_in: u32,
+    expires_in: i64,
 }
 
 #[derive(Serialize, Debug)]
@@ -94,17 +73,17 @@ struct TestTokenInput {
     app_id: String,
 }
 
-pub fn test_token(event: Value, _context: LambdaContext) -> LambdaResult<ApiGatewayResponse> {
+pub fn test_token(event: &Value, _context: &LambdaContext) -> LambdaResult<ApiGatewayResponse> {
     let body = event["body"].as_str();
-    let data_result = body.chain_err(|| ErrorKind::MissingBody)
+    let data_result = body.ok_or_else(|| InputError::MissingBody)
         .and_then(|valid_body| {
                       serde_urlencoded::from_bytes::<TestTokenInput>(valid_body.as_bytes())
-                          .chain_err(|| ErrorKind::ParsingError("body"))
+                          .map_err(|_| InputError::ParsingError("body".to_string()))
                   });
 
     match data_result {
         Ok(data) => {
-            let expires_in = 86400;
+            let expires_in = time::Duration::days(1);
             let p1 = AuthenticationContext {
                     user: model::app::User {
                         user_id: model::app::UserId(data.user_id),
@@ -119,7 +98,7 @@ pub fn test_token(event: Value, _context: LambdaContext) -> LambdaResult<ApiGate
             let tokens = Tokens {
                 access_token: encode(header, JWT_SECRET_KEY.to_owned(), p1.clone()),
                 refresh_token: None,
-                expires_in: expires_in,
+                expires_in: expires_in.num_seconds(),
             };
             Ok(ApiGatewayResponse {
                    status_code: http::StatusCode::OK,
@@ -145,8 +124,8 @@ pub fn test_token(event: Value, _context: LambdaContext) -> LambdaResult<ApiGate
 
 }
 
-pub fn get_pub_certificate(_event: Value,
-                           _context: LambdaContext)
+pub fn get_pub_certificate(_event: &Value,
+                           _context: &LambdaContext)
                            -> LambdaResult<ApiGatewayResponse> {
     let mut f = File::open(JWT_PUB_KEY).expect("file not found");
 
@@ -161,31 +140,34 @@ pub fn get_pub_certificate(_event: Value,
        })
 }
 
-fn wrapped_decode_jwt(token: String) -> Result<(Header, Payload)> {
+fn wrapped_decode_jwt(token: String) -> Result<(Header, Payload), ProcessError> {
     match ::std::panic::catch_unwind(|| decode(token, JWT_PUB_KEY.to_owned(), Algorithm::RS256)) {
         Ok(result) => {
-            result.map_err(|err| Error::from(format!("error decoding the JWT {:?}", err)))
+            result
+                .map_err(|err| ProcessError::JWTError(format!("error decoding the JWT {:?}", err)))
         }
-        Err(error) => Err(Error::from(format!("error in JWT lib: {:?}", error))),
+        Err(error) => Err(ProcessError::JWTError(format!("error decoding the JWT {:?}", error))),
     }
 }
 
-pub fn check_authorization(event: Value, _context: LambdaContext) -> LambdaResult<Policy> {
+pub fn check_authorization(event: &Value, _context: &LambdaContext) -> LambdaResult<Policy> {
     let auth_header = event["authorizationToken"].as_str();
     let authentication_context =
         auth_header
-            .chain_err(|| ErrorKind::MissingHeader("authorization"))
+            .ok_or_else(|| InputError::MissingHeader("authorization".to_string()))
             .and_then(|header| if header.to_lowercase().starts_with("bearer ") {
                           Ok(header[7..].to_owned())
                       } else {
-                          Err(ErrorKind::InvalidHeader("authorization").into())
+                          Err(InputError::InvalidHeader { name: "authorization".to_string() })
                       })
-            .and_then(wrapped_decode_jwt)
-            .and_then(|(_, payload)| AuthenticationContext::try_from(payload));
+            .map_err(|err| err.into())
+            .and_then(|token| wrapped_decode_jwt(token).map_err(|err| err.into()))
+            .and_then(|(_, payload)| AuthenticationContext::try_from(&payload));
     match authentication_context {
         Ok(ac) => Ok(Policy::allow_all(String::from("user"), ac.to_hashmap())),
         Err(error) => {
             println!("error during authorization: {:?}", error);
+            println!("cause: {:?}", error.cause());
             Err(PyException("Unauthorized".to_owned()).into())
         }
     }
@@ -197,32 +179,33 @@ struct AuthenticationContext {
     app_id: String,
 }
 impl AuthenticationContext {
-    pub fn try_from(p: Payload) -> Result<AuthenticationContext> {
+    pub fn try_from(p: &Payload) -> Result<AuthenticationContext, Error> {
         let user_id = p.get("user_id")
-            .chain_err(|| ErrorKind::MissingField("user_id"))?;
-        let user = AuthenticationContext::get_user_from(user_id)?;
+            .ok_or_else(|| InputError::MissingField("user_id".to_string()));
+        let user = AuthenticationContext::get_user_from(user_id?)
+            .map_err(|err| format_err!("Error code: {}", err))?;
 
         let app_id = p.get("app_id")
-            .chain_err(|| ErrorKind::MissingField("app_id"))?;
+            .ok_or_else(|| InputError::MissingField("app_id".to_string()));
 
         let expires_at = p.get("expires_at")
-            .chain_err(|| ErrorKind::MissingField("expires_at"))
+            .ok_or_else(|| InputError::MissingField("expires_at".to_string()))
             .and_then(|expires_at| {
                           expires_at
                               .parse::<i64>()
-                              .chain_err(|| ErrorKind::ParsingError("expires_at"))
+                              .map_err(|_| InputError::ParsingError("expires_at".to_string()))
                       })?;
         if expires_at < time::get_time().sec {
-            return Err(ErrorKind::ExpiredToken.into());
+            return Err(InputError::ExpiredToken {})?;
         }
 
         Ok(AuthenticationContext {
                user: user,
-               app_id: app_id.to_string(),
+               app_id: app_id?.to_string(),
            })
     }
 
-    fn get_user_from(user_id: &str) -> Result<model::app::User> {
+    fn get_user_from(user_id: &str) -> Result<model::app::User, Error> {
         //TODO: check that user exists and return it from
         Ok(model::app::User {
                user_id: model::app::UserId(user_id.to_string()),
@@ -237,12 +220,12 @@ impl AuthenticationContext {
         hashmap.insert("app_id".to_string(), self.app_id.to_owned());
         hashmap
     }
-    pub fn to_payload(self, expires_in: u32) -> Payload {
+    pub fn to_payload(&self, expires_in: time::Duration) -> Payload {
         let mut p = Payload::new();
         p.insert("user_id".to_string(), self.user.user_id.to_string());
-        p.insert("app_id".to_string(), self.app_id);
+        p.insert("app_id".to_string(), self.app_id.to_string());
         p.insert("expires_at".to_string(),
-                 (time::get_time().sec + i64::from(expires_in)).to_string());
+                 (time::get_time().add(expires_in)).sec.to_string());
         p.insert("session_id".to_string(),
                  format!("{}", uuid::Uuid::new_v4().hyphenated()));
         p.insert("token_id".to_string(),
@@ -265,7 +248,7 @@ mod tests {
                 },
                 app_id: "a1".to_owned(),
             }
-            .to_payload(57);
+            .to_payload(time::Duration::seconds(57));
 
         assert_eq!("u1", payload["user_id"])
     }
@@ -277,7 +260,7 @@ mod tests {
         p.insert("app_id".to_string(), "1".to_owned());
         p.insert("expires_at".to_string(),
                  (time::get_time().sec + i64::from(5)).to_string());
-        let auth_context = AuthenticationContext::try_from(p);
+        let auth_context = AuthenticationContext::try_from(&p);
 
         assert!(auth_context.is_ok());
     }
@@ -289,11 +272,10 @@ mod tests {
         p.insert("app_id".to_string(), "1".to_owned());
         p.insert("expires_at".to_string(),
                  (time::get_time().sec + i64::from(-5)).to_string());
-        let auth_context = AuthenticationContext::try_from(p);
+        let auth_context = AuthenticationContext::try_from(&p);
 
         assert!(auth_context.is_err());
         let err = auth_context.unwrap_err();
-        assert_eq!(err.description(), "Expired Token");
         assert_eq!(err.to_string(), "Expired Token");
     }
 
@@ -303,11 +285,10 @@ mod tests {
         p.insert("app_id".to_string(), "1".to_owned());
         p.insert("expires_at".to_string(),
                  (time::get_time().sec + i64::from(-5)).to_string());
-        let auth_context = AuthenticationContext::try_from(p);
+        let auth_context = AuthenticationContext::try_from(&p);
 
         assert!(auth_context.is_err());
         let err = auth_context.unwrap_err();
-        assert_eq!(err.description(), "Missing Field");
         assert_eq!(err.to_string(), "Missing Field: \'user_id\'");
     }
 
@@ -317,11 +298,10 @@ mod tests {
         p.insert("user_id".to_string(), "1".to_owned());
         p.insert("app_id".to_string(), "1".to_owned());
         p.insert("expires_at".to_string(), "AZER".to_string());
-        let auth_context = AuthenticationContext::try_from(p);
+        let auth_context = AuthenticationContext::try_from(&p);
 
         assert!(auth_context.is_err());
         let err = auth_context.unwrap_err();
-        assert_eq!(err.description(), "Parsing Error");
         assert_eq!(err.to_string(), "Could Not Parse Field: \'expires_at\'");
     }
 }

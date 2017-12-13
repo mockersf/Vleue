@@ -1,4 +1,5 @@
 //use chrono;
+use uuid;
 
 pub mod basic_item;
 
@@ -10,6 +11,7 @@ typed_id!(CostCategoryId);
 
 pub trait Item {
     fn id(&self) -> &ItemId;
+    fn user_id(&self) -> &super::UserId;
     fn title(&self) -> &str;
     fn description(&self) -> &str;
     fn status(&self) -> &State;

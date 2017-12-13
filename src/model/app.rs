@@ -1,4 +1,5 @@
 use chrono;
+use uuid;
 
 typed_id!(UserId);
 typed_id!(AppId);

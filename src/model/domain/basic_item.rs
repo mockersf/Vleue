@@ -2,6 +2,7 @@ use super::*;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BasicItem {
+    pub uid: super::super::UserId,
     pub id: ItemId,
     pub title: String,
     pub description: String,
@@ -14,6 +15,9 @@ pub struct BasicItem {
 impl Item for BasicItem {
     fn id(&self) -> &ItemId {
         &self.id
+    }
+    fn user_id(&self) -> &super::super::UserId {
+        &self.uid
     }
     fn title(&self) -> &str {
         &self.title

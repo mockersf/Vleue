@@ -12,6 +12,7 @@ serde = "*"
 serde_derive = "*"
 serde_json = "*"
 serde_urlencoded = "*"
+serde_dynamodb = { git = "https://github.com/mockersf/serde_dynamodb" }
 
 failure = "*"
 

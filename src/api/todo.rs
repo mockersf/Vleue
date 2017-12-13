@@ -1,5 +1,4 @@
 use std::env;
-use std::collections::HashMap;
 
 use crowbar;
 use http;
@@ -8,10 +7,10 @@ use serde_json;
 use uuid;
 use serde::ser::{Serialize, Serializer, SerializeStruct};
 use failure::{Error, Fail};
+use serde_dynamodb;
 
 use rusoto_core::{DefaultCredentialsProvider, Region};
-use rusoto_dynamodb::{DynamoDb, DynamoDbClient, QueryInput, QueryOutput, PutItemInput,
-                      AttributeValue};
+use rusoto_dynamodb::{DynamoDb, DynamoDbClient, QueryInput, PutItemInput};
 use rusoto_core::default_tls_client;
 
 use model;
@@ -54,6 +53,11 @@ struct InvalidUUIDError {
     uuid_error: uuid::ParseError,
 }
 
+#[derive(Serialize, Debug)]
+struct UidFilter {
+    #[serde(rename = ":uid")]
+    uid: String,
+}
 
 pub fn list(
     event: &crowbar::Value,
@@ -62,47 +66,27 @@ pub fn list(
     let table = env::var("table").unwrap();
     let provider = DefaultCredentialsProvider::new().unwrap();
     let client = DynamoDbClient::new(default_tls_client().unwrap(), provider, Region::UsEast1);
-    let mut attributes = HashMap::new();
-    attributes.insert(
-        ":uid".to_string(),
-        AttributeValue {
-            s: Some(
-                event["requestContext"]["authorizer"]["user_id"]
-                    .as_str()
-                    .unwrap()
-                    .to_string(),
-            ),
-            ..Default::default()
-        },
-    );
+    let uid_filter = UidFilter {
+        uid: event["requestContext"]["authorizer"]["user_id"]
+            .as_str()
+            .unwrap()
+            .to_string(),
+    };
     let query_input = QueryInput {
         table_name: table,
-        expression_attribute_values: Some(attributes),
+        expression_attribute_values: Some(serde_dynamodb::to_hashmap(&uid_filter).unwrap()),
         key_condition_expression: Some("uid = :uid".to_string()),
         ..Default::default()
     };
-    let query_output = client.query(&query_input);
-    let a: QueryOutput = query_output.unwrap();
-    let r = a.items
+    let query_output: Vec<model::basic_item::BasicItem> = client
+        .query(&query_input)
         .unwrap()
-        .iter()
-        .map(|item| {
-            let description = item.get("description").and_then(|item| item.s.clone());
-            let title = item.get("title").and_then(|item| item.s.clone());
-            let id = item.get("id").and_then(|item| item.s.clone());
-            let project_id = item.get("project_id").and_then(|item| item.s.clone());
-            model::basic_item::BasicItem {
-                description: description.unwrap_or_else(|| "".to_string()),
-                flagged: false,
-                id: id.unwrap().into(),
-                project_id: project_id.unwrap().into(),
-                status: model::State { name: "".to_string() },
-                title: title.unwrap(),
-            }
-        })
+        .items
+        .unwrap_or_else(|| vec![])
+        .into_iter()
+        .map(|item| serde_dynamodb::from_hashmap(item).unwrap())
         .collect();
-
-    let todos = model::api::ItemList { items: r };
+    let todos = model::api::ItemList { items: query_output };
 
     Ok(crowbar::ApiGatewayResponse {
         status_code: http::StatusCode::OK,
@@ -118,7 +102,10 @@ struct ItemInput {
     project_id: Option<String>,
 }
 impl ItemInput {
-    fn new_item(self) -> Result<model::basic_item::BasicItem, SerializableError> {
+    fn to_new_item(
+        &self,
+        user_id: model::UserId,
+    ) -> Result<model::basic_item::BasicItem, SerializableError> {
         let id = model::ItemId(format!("{}", uuid::Uuid::new_v4().hyphenated()));
         let title = self.title.clone().ok_or_else(
             || MissingField("title").into(),
@@ -136,6 +123,7 @@ impl ItemInput {
         let project_id = model::ProjectId(format!("{}", input_project_id));
         title.map(|title| {
             model::basic_item::BasicItem {
+                uid: user_id,
                 description: description,
                 flagged: false,
                 id: id,
@@ -163,54 +151,19 @@ pub fn add(
             serde_json::from_slice::<ItemInput>(valid_body.as_bytes())
                 .map_err(|err| ParsingError { serde_error: err }.into())
         });
-    match data_result.and_then(|item| item.new_item()) {
+    match data_result.and_then(|item| {
+        item.to_new_item(
+            event["requestContext"]["authorizer"]["user_id"]
+                .as_str()
+                .unwrap()
+                .to_string()
+                .into(),
+        )
+    }) {
         Ok(item) => {
             let table = env::var("table").unwrap();
-            let mut key = HashMap::new();
-            key.insert(
-                "uid".to_string(),
-                AttributeValue {
-                    s: Some(
-                        event["requestContext"]["authorizer"]["user_id"]
-                            .as_str()
-                            .unwrap()
-                            .to_string(),
-                    ),
-                    ..Default::default()
-                },
-            );
-            key.insert(
-                "id".to_string(),
-                AttributeValue {
-                    s: Some(item.id.to_string()),
-                    ..Default::default()
-                },
-            );
-            key.insert(
-                "title".to_string(),
-                AttributeValue {
-                    s: Some(item.title.to_owned()),
-                    ..Default::default()
-                },
-            );
-            key.insert(
-                "project_id".to_string(),
-                AttributeValue {
-                    s: Some(item.project_id.to_string()),
-                    ..Default::default()
-                },
-            );
-            if item.description != "" {
-                key.insert(
-                    "description".to_string(),
-                    AttributeValue {
-                        s: Some(item.description.to_owned()),
-                        ..Default::default()
-                    },
-                );
-            }
             let put_item = PutItemInput {
-                item: key,
+                item: serde_dynamodb::to_hashmap(&item).unwrap(),
                 table_name: table,
                 ..Default::default()
             };

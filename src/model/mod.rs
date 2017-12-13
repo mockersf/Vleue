@@ -13,6 +13,12 @@ macro_rules! typed_id {
                 $name(v)
             }
         }
+        impl $name {
+            #[allow(dead_code)]
+            fn new() -> $name {
+                $name(format!("{}", uuid::Uuid::new_v4().hyphenated()))
+            }
+        }
     );
 }
 
@@ -20,4 +26,5 @@ pub mod app;
 pub mod api;
 mod domain;
 
+pub use self::app::*;
 pub use self::domain::*;

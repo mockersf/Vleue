@@ -52,11 +52,19 @@ struct InvalidUUIDError {
     #[cause]
     uuid_error: uuid::ParseError,
 }
+#[derive(Debug, Fail)]
+#[fail(display = "not found: {} with id '{}'", object, id)]
+struct NotFound {
+    object: &'static str,
+    id: String,
+}
 
 #[derive(Serialize, Debug)]
-struct UidFilter {
+struct TodoFilter {
     #[serde(rename = ":uid")]
-    uid: String,
+    user_id: Option<String>,
+    #[serde(rename = ":id")]
+    id: Option<String>,
 }
 
 pub fn list(
@@ -66,11 +74,14 @@ pub fn list(
     let table = env::var("table").unwrap();
     let provider = DefaultCredentialsProvider::new().unwrap();
     let client = DynamoDbClient::new(default_tls_client().unwrap(), provider, Region::UsEast1);
-    let uid_filter = UidFilter {
-        uid: event["requestContext"]["authorizer"]["user_id"]
-            .as_str()
-            .unwrap()
-            .to_string(),
+    let uid_filter = TodoFilter {
+        user_id: Some(
+            event["requestContext"]["authorizer"]["user_id"]
+                .as_str()
+                .unwrap()
+                .to_string(),
+        ),
+        id: None,
     };
     let query_input = QueryInput {
         table_name: table,
@@ -185,5 +196,66 @@ pub fn add(
             })
         }
 
+    }
+}
+
+pub fn get(
+    event: &crowbar::Value,
+    _context: &crowbar::LambdaContext,
+) -> crowbar::LambdaResult<
+    crowbar::ApiGatewayResponse<
+        model::basic_item::BasicItem,
+        SerializableError,
+    >,
+> {
+    let todo_id = event["pathParameters"]["id"].as_str().unwrap().to_string();
+    let table = env::var("table").unwrap();
+    let provider = DefaultCredentialsProvider::new().unwrap();
+    let client = DynamoDbClient::new(default_tls_client().unwrap(), provider, Region::UsEast1);
+    let user_id_filter = TodoFilter {
+        user_id: Some(
+            event["requestContext"]["authorizer"]["user_id"]
+                .as_str()
+                .unwrap()
+                .to_string(),
+        ),
+        id: Some(todo_id.clone()),
+    };
+
+    let query_input = QueryInput {
+        table_name: table,
+        expression_attribute_values: Some(serde_dynamodb::to_hashmap(&user_id_filter).unwrap()),
+        key_condition_expression: Some("uid = :uid and id = :id".to_string()),
+        ..Default::default()
+    };
+    let query_output: Option<model::basic_item::BasicItem> =
+        client
+            .query(&query_input)
+            .unwrap()
+            .items
+            .unwrap_or_else(|| vec![])
+            .pop()
+            .map(|item| serde_dynamodb::from_hashmap(item).unwrap());
+
+    if let Some(todo) = query_output {
+        Ok(crowbar::ApiGatewayResponse {
+            status_code: http::StatusCode::OK,
+            body: Some((Ok(todo), mime::APPLICATION_JSON)),
+            ..Default::default()
+        })
+    } else {
+        Ok(crowbar::ApiGatewayResponse {
+            status_code: http::StatusCode::NOT_FOUND,
+            body: Some((
+                Err(
+                    NotFound {
+                        object: "todo",
+                        id: todo_id,
+                    }.into(),
+                ),
+                mime::APPLICATION_JSON,
+            )),
+            ..Default::default()
+        })
     }
 }

@@ -37,5 +37,6 @@ lambda!(
     "api_auth_test_token" => api::auth::test_token,
     "api_auth_check_authorization" => api::auth::check_authorization,
     "api_todo_list" => api::todo::list,
-    "api_todo_add" => api::todo::add
+    "api_todo_add" => api::todo::add,
+    "api_todo_get" => api::todo::get,
 );

@@ -16,7 +16,7 @@ serde_dynamodb = { git = "https://github.com/mockersf/serde_dynamodb" }
 
 failure = "*"
 
-uuid = { version = "0.4", features = ["serde", "v4"] }
+uuid = { version = "0.5", features = ["serde", "v4"] }
 frank_jwt = "2.5.1"
 time = "*"
 http = "*"

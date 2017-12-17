@@ -1,9 +1,10 @@
-#  Vleue [![Build Status](https://travis-ci.org/mockersf/Vleue.svg?branch=master)](https://travis-ci.org/mockersf/Vleue)
+#  Vleue [![Build Status](https://travis-ci.org/mockersf/Vleue.svg?branch=master)](https://travis-ci.org/mockersf/Vleue) [![Coverage Status](https://coveralls.io/repos/github/mockersf/Vleue/badge.svg?branch=master)](https://coveralls.io/github/mockersf/Vleue?branch=master)
 
 ToDo api built using rust and deployed on AWS Lambda
 
 
 ## Dependencies
+
 * [rust-crowbar](https://github.com/ilianaw/rust-crowbar) for python wrapper to AWS Lambda
 * [rusoto](https://github.com/rusoto/rusoto) as the AWS SDK (access to dynamoDB for now)
 * [failure](https://github.com/withoutboats/failure) for error management

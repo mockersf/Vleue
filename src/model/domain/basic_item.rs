@@ -1,6 +1,10 @@
+use rusoto_dynamodb::QueryInput;
+use serde_dynamodb;
+use serde_dynamodb::ToQueryInput;
+
 use super::*;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, ToQueryInput)]
 pub struct BasicItem {
     pub uid: super::super::UserId,
     pub id: ItemId,

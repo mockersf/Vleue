@@ -8,9 +8,10 @@ use uuid;
 use serde::ser::{Serialize, Serializer, SerializeStruct};
 use failure::{Error, Fail};
 use serde_dynamodb;
+use serde_dynamodb::ToQueryInput;
 
 use rusoto_core::{DefaultCredentialsProvider, Region};
-use rusoto_dynamodb::{DynamoDb, DynamoDbClient, QueryInput, PutItemInput};
+use rusoto_dynamodb::{DynamoDb, DynamoDbClient, PutItemInput};
 use rusoto_core::default_tls_client;
 
 use model;
@@ -59,14 +60,6 @@ struct NotFound {
     id: String,
 }
 
-#[derive(Serialize, Debug)]
-struct TodoFilter {
-    #[serde(rename = ":uid")]
-    user_id: Option<String>,
-    #[serde(rename = ":id")]
-    id: Option<String>,
-}
-
 pub fn list(
     event: &crowbar::Value,
     _context: &crowbar::LambdaContext,
@@ -74,23 +67,19 @@ pub fn list(
     let table = env::var("table").unwrap();
     let provider = DefaultCredentialsProvider::new().unwrap();
     let client = DynamoDbClient::new(default_tls_client().unwrap(), provider, Region::UsEast1);
-    let uid_filter = TodoFilter {
-        user_id: Some(
+    let uid_filter = model::basic_item::BasicItemQueryInput {
+        uid: Some(
             event["requestContext"]["authorizer"]["user_id"]
                 .as_str()
                 .unwrap()
-                .to_string(),
+                .to_string()
+                .into(),
         ),
-        id: None,
-    };
-    let query_input = QueryInput {
-        table_name: table,
-        expression_attribute_values: Some(serde_dynamodb::to_hashmap(&uid_filter).unwrap()),
-        key_condition_expression: Some("uid = :uid".to_string()),
         ..Default::default()
     };
+
     let query_output: Vec<model::basic_item::BasicItem> = client
-        .query(&query_input)
+        .query(&uid_filter.to_query_input(table))
         .unwrap()
         .items
         .unwrap_or_else(|| vec![])
@@ -212,25 +201,21 @@ pub fn get(
     let table = env::var("table").unwrap();
     let provider = DefaultCredentialsProvider::new().unwrap();
     let client = DynamoDbClient::new(default_tls_client().unwrap(), provider, Region::UsEast1);
-    let user_id_filter = TodoFilter {
-        user_id: Some(
+    let todo_filter = model::basic_item::BasicItemQueryInput {
+        uid: Some(
             event["requestContext"]["authorizer"]["user_id"]
                 .as_str()
                 .unwrap()
-                .to_string(),
+                .to_string()
+                .into(),
         ),
-        id: Some(todo_id.clone()),
-    };
-
-    let query_input = QueryInput {
-        table_name: table,
-        expression_attribute_values: Some(serde_dynamodb::to_hashmap(&user_id_filter).unwrap()),
-        key_condition_expression: Some("uid = :uid and id = :id".to_string()),
+        id: Some(todo_id.clone().into()),
         ..Default::default()
     };
+
     let query_output: Option<model::basic_item::BasicItem> =
         client
-            .query(&query_input)
+            .query(&todo_filter.to_query_input(table))
             .unwrap()
             .items
             .unwrap_or_else(|| vec![])

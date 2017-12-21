@@ -14,6 +14,8 @@ extern crate serde_derive;
 extern crate serde_json;
 extern crate serde_urlencoded;
 extern crate serde_dynamodb;
+#[macro_use]
+extern crate serde_dynamodb_derive;
 
 extern crate uuid;
 extern crate frank_jwt;
